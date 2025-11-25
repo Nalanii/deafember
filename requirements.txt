@@ -1,0 +1,6 @@
+num2words==0.5.14
+python-dotenv==1.0.0
+requests==2.31.0
+schedule==1.2.2
+tiktok-uploader==1.1.5
+tweepy==4.16.0
