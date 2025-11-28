@@ -80,6 +80,33 @@ def get_page_token(data, target_id):
             return page.get('access_token')
     return None # Return None if the ID isn't found
 
+def get_image_urls_from_facebook_post(access_token, post_id):
+    url = f"{BASE_FB_URL}/{post_id}"
+    params = {
+        'fields': 'attachments{subattachments.limit(10){media{image{src}}}}',
+        'access_token': access_token
+    }
+    
+    r = requests.get(url, params=params)
+    data = r.json()
+    
+    image_urls = []
+    
+    try:
+        attachments = data.get('attachments', {}).get('data', [])
+        if attachments:
+            sub_attachments = attachments[0].get('subattachments', {}).get('data', [])
+            
+            for item in sub_attachments:
+                src = item.get('media', {}).get('image', {}).get('src')
+                if src:
+                    image_urls.append(src)
+                    
+    except Exception as e:
+        print(f"⚠️ Could not extract URLs: {e}")
+        
+    return image_urls
+
 # ==============================================================================
 # PLATFORM POSTING FUNCTIONS
 # ==============================================================================
@@ -88,11 +115,13 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
     url = f"{BASE_FB_URL}/{group_or_page_id}/feed"
    
     attached_media = []
+    photo_ids = []
     for attachment in post_content.attachments:
         photo_id = upload_unpublished_photo_on_facebook(access_token, attachment)
         if photo_id:
             # Format required by Graph API: [{"media_fbid": "123"}, ...]
             attached_media.append({"media_fbid": photo_id})
+            photo_ids.append(photo_id)
 
     payload = {
         'message': post_content.message,
@@ -107,17 +136,72 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
         print(f"✅ Posted to FB Page: {data.get('id')}")
     else:
         print(f"❌ FB Page Error: {r.text}")
+    
+    return data.get('id') # Post ID
 
-def post_to_instagram(post_content: PostContent):
-    # Step 1: Create Container
-    url_create = f"https://graph.facebook.com/v24.0/{config.get('IG_USER_ID')}/media"
-    # Note: Instagram Graph API requires the image be on a PUBLIC URL, not local.
-    # For this script, we assume you host it somewhere or use a service like Imgur temporarily.
-    # If you must upload local, you need a specialized tool. 
-    # Here we assume `image_url` is passed or we skip local upload for this simplified script.
-    print("⚠️ Instagram API requires a public image URL, not a local file path.")
-    print("⚠️ Skipping Instagram for this local-file example.")
-    # To implement: POST to /media with 'image_url', get ID, then POST to /media_publish
+def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list, caption: str):
+    # --- PHASE 1: Create Individual Item Containers ---
+    item_container_ids = []
+    
+    for url in image_urls:
+        url_create = f"{BASE_FB_URL}/{ig_user_id}/media"
+        payload = {
+            'image_url': url,
+            'is_carousel_item': 'true',  # CRITICAL: Marks this as a child item
+            'access_token': access_token
+        }
+        
+        r = requests.post(url_create, data=payload)
+        data = r.json()
+        
+        if 'id' in data:
+            item_container_ids.append(data['id'])
+            print(f"   ↳ Created item container: {data['id']}")
+        else:
+            print(f"❌ Error creating item for {id}: {data}")
+            return None
+
+    if not item_container_ids:
+        print("❌ No items were successfully created.")
+        return None
+
+    # --- PHASE 2: Create the Carousel (Parent) Container ---
+    
+    url_carousel = f"{BASE_FB_URL}/{ig_user_id}/media"
+    payload = {
+        'media_type': 'CAROUSEL',
+        'caption': caption,
+        'children': ','.join(item_container_ids), # List of IDs as CSV string
+        'access_token': access_token
+    }
+    
+    r = requests.post(url_carousel, data=payload)
+    carousel_result = r.json()
+    
+    if 'id' not in carousel_result:
+        print(f"❌ Error creating parent carousel: {carousel_result}")
+        return None
+        
+    creation_id = carousel_result['id']
+    print(f"📦 Carousel Parent Created: {creation_id}")
+
+    # --- PHASE 3: Publish the Carousel ---
+    
+    url_publish = f"{BASE_FB_URL}/{ig_user_id}/media_publish"
+    publish_payload = {
+        'creation_id': creation_id,
+        'access_token': access_token
+    }
+    
+    r_publish = requests.post(url_publish, data=publish_payload)
+    publish_result = r_publish.json()
+
+    if 'id' in publish_result:
+        print(f"✅ Carousel Published Successfully: {publish_result['id']}")
+        return publish_result['id']
+    else:
+        print(f"❌ Error Publishing Carousel: {publish_result}")
+        return None
 
 def post_to_twitter(post_content: PostContent):
     client = tweepy.Client(
@@ -265,12 +349,12 @@ def check_date_and_run():
     
     signs_of_fun_page_id = config.get('FB_SOF_PAGE_ID')
     if not signs_of_fun_page_id:
-        print("❌ Sign of Fun Page ID not set in config.")
+        print("❌ Signs of Fun Page ID not set in config.")
         return
     
     # signs_of_fun_group_id = config.get('FB_SOF_GROUP_ID')
     # if not signs_of_fun_group_id:
-    #     print("❌ Sign of Fun Group ID not set in config.")
+    #     print("❌ Signs of Fun Group ID not set in config.")
     #     return
     
     token_data = get_facebook_access_tokens()
@@ -283,17 +367,25 @@ def check_date_and_run():
     
     signs_of_fun_page_token = get_page_token(token_data, signs_of_fun_page_id)
     if not signs_of_fun_page_token:
-        print("❌ Could not find Sign of Fun Page token.")
+        print("❌ Could not find Signs of Fun Page token.")
         return
     print("✅ Signs of Fun Page token found:", signs_of_fun_page_token)
 
     print("--- Starting Social Media Blast ---")
+    # Facebook
     post_to_facebook_page(deafember_page_token, deafember_page_id, content) # Deafember Page
-    post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Sign of Fun Page
-    # post_to_facebook_page(deafember_page_token, signs_of_fun_group_id, content) # Sign of Fun Group (Uses Deafember Page Token)
+    signs_of_fun_facebook_post_id = post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Signs of Fun Page
+    # post_to_facebook_page(deafember_page_token, signs_of_fun_group_id, content) # Signs of Fun Group (Uses Deafember Page Token)
+
+    # Instagram
+    image_urls = get_image_urls_from_facebook_post(signs_of_fun_page_token, signs_of_fun_facebook_post_id)
+    post_instagram_carousel(signs_of_fun_page_token, config.get('IG_USER_ID'), image_urls, content.message) # Signs of Fun Instagram
+    
+    # Twitter
     post_to_twitter(content)
+    
+    # TikTok
     # post_to_tiktok()
-    # post_to_instagram() # Requires hosting logic
 
 
 if __name__ == "__main__":
