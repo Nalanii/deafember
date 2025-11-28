@@ -136,9 +136,13 @@ def post_to_twitter(post_content: PostContent):
 
     try:
         # Upload image
-        #media = api.media_upload(filename=IMAGE_PATH) #todo
+        media_ids = []
+        for filename in post_content.attachments:
+            # Uploads to v1.1 endpoint
+            res = api.media_upload(filename)
+            media_ids.append(res.media_id)
         # Create Tweet
-        response = client.create_tweet(text=post_content.message, media_ids=[media.media_id])
+        response = client.create_tweet(text=post_content.message, media_ids=media_ids)
         print(f"✅ Posted to Twitter: {response.data['id']}")
     except Exception as e:
         print(f"❌ Twitter Error: {e}")
@@ -287,7 +291,7 @@ def check_date_and_run():
     post_to_facebook_page(deafember_page_token, deafember_page_id, content) # Deafember Page
     post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Sign of Fun Page
     # post_to_facebook_page(deafember_page_token, signs_of_fun_group_id, content) # Sign of Fun Group (Uses Deafember Page Token)
-    # post_to_twitter()
+    post_to_twitter(content)
     # post_to_tiktok()
     # post_to_instagram() # Requires hosting logic
 
