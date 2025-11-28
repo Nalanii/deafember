@@ -1,7 +1,6 @@
 import requests
 import json
 import tweepy
-from tiktok_uploader.upload import upload_video # Unofficial wrapper
 import os
 from dotenv import dotenv_values
 import datetime
@@ -231,20 +230,6 @@ def post_to_twitter(post_content: PostContent):
     except Exception as e:
         print(f"❌ Twitter Error: {e}")
 
-def post_to_tiktok(post_content: PostContent):
-    # Uses selenium to automate the browser upload
-    # Requires 'tiktok-uploader' installed and a valid session ID
-    try:
-        upload_video(
-            #filename=VIDEO_PATH,
-            description=post_content.message,
-            cookies=config.get('TIKTOK_SESSION_ID'),
-            headless=True 
-        )
-        print("✅ Posted to TikTok")
-    except Exception as e:
-        print(f"❌ TikTok Error: {e}")
-
 # ==============================================================================
 # CONTENT FUNCTIONS
 # ==============================================================================
@@ -315,7 +300,6 @@ def january_post(today):
         attachments=["./photos/63.png"]
     )
 
-
 # ==============================================================================
 # MAIN EXECUTION
 # ==============================================================================
@@ -326,7 +310,7 @@ def check_date_and_run():
     content = None
 
     # Check if today is in December
-    if today.month == 12 or True: # Debugging
+    if today.month == 12:
         print("--- Content ---")
         content = december_post(today)
         
@@ -352,11 +336,6 @@ def check_date_and_run():
         print("❌ Signs of Fun Page ID not set in config.")
         return
     
-    # signs_of_fun_group_id = config.get('FB_SOF_GROUP_ID')
-    # if not signs_of_fun_group_id:
-    #     print("❌ Signs of Fun Group ID not set in config.")
-    #     return
-    
     token_data = get_facebook_access_tokens()
 
     deafember_page_token = get_page_token(token_data, deafember_page_id)
@@ -375,7 +354,6 @@ def check_date_and_run():
     # Facebook
     post_to_facebook_page(deafember_page_token, deafember_page_id, content) # Deafember Page
     signs_of_fun_facebook_post_id = post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Signs of Fun Page
-    # post_to_facebook_page(deafember_page_token, signs_of_fun_group_id, content) # Signs of Fun Group (Uses Deafember Page Token)
 
     # Instagram
     image_urls = get_image_urls_from_facebook_post(signs_of_fun_page_token, signs_of_fun_facebook_post_id)
@@ -383,19 +361,15 @@ def check_date_and_run():
     
     # Twitter
     post_to_twitter(content)
-    
-    # TikTok
-    # post_to_tiktok()
-
 
 if __name__ == "__main__":
     check_date_and_run()
 
     # Schedule the job every day at 12:00 (noon)
-    # print("Scheduling daily check at 12:00 PM...")
-    # schedule.every().day.at("12:00").do(check_date_and_run)
+    print("Scheduling daily check at 12:00 PM...")
+    schedule.every().day.at("12:00").do(check_date_and_run)
     
-    # # Infinite loop to keep the script running and check for pending jobs
-    # while True:
-    #     schedule.run_pending()
-    #     time.sleep(60) # Check every minute
+    # Infinite loop to keep the script running and check for pending jobs
+    while True:
+        schedule.run_pending()
+        time.sleep(60) # Check every minute

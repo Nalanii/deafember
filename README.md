@@ -4,7 +4,7 @@ In the repo's root directory, run the following command:
 
 # Setup Needed Keys
 Using the .env-example file as a guide, create an .env file and fill in the values as follows:
-## Facebook/Instagram (Meta)
+## Facebook & Instagram (Meta)
 1. **TODO**
 
 ## Twitter/X
@@ -14,16 +14,6 @@ Using the .env-example file as a guide, create an .env file and fill in the valu
 4. Go to "Keys and Tokens" and generate your Consumer Keys (API Key/Secret) and Authentication Tokens (Access Token/Secret).
 
 > Ensure to generate and copy tokens _after_ establishing correct (read/write) permissions
-
-## TikTok
-The official TikTok API is for enterprise apps thus we are using a workaround.
-
-1. Log in to TikTok.com on your Chrome browser
-2. Right-click the page $\to$ Inspect $\to$ Application Tab $\to$ Cookies $\to$ https://www.tiktok.com
-3. Find the cookie named `sessionid`.
-4. Copy its value string
-
-> Note: This session ID expires every few weeks, so you will need to update it manually.
 
 # Updating Prompts and Photos
 The `getPrompt()` method should be updated to have a dictionary of the prompts, keyed by the day of the month. The photos/ folder should include 63 photos in the following format:
