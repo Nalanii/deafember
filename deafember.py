@@ -20,11 +20,13 @@ class PostContent:
         self.message = message
         self.attachments = attachments
 
+BASE_FB_URL = "https://graph.facebook.com/v24.0"
+
 # ==============================================================================
 # HELPER FUNCTIONS
 # ==============================================================================
 def upload_unpublished_photo_on_facebook(access_token, image_source):
-    url = f"https://graph.facebook.com/v24.0/me/photos"
+    url = f"{BASE_FB_URL}/me/photos"
     
     payload = {
         'access_token': access_token,
@@ -59,7 +61,7 @@ def upload_unpublished_photo_on_facebook(access_token, image_source):
             files['source'].close()
 
 def get_facebook_access_tokens():
-    url = f"https://graph.facebook.com/v24.0/me/accounts"
+    url = f"{BASE_FB_URL}/me/accounts"
     payload = {
         'access_token': config.get('META_USER_ACCESS_TOKEN')
     }
@@ -79,11 +81,11 @@ def get_page_token(data, target_id):
     return None # Return None if the ID isn't found
 
 # ==============================================================================
-# PLATFORM FUNCTIONS
+# PLATFORM POSTING FUNCTIONS
 # ==============================================================================
 
-def post_to_facebook_page(access_token: str, post_content: PostContent):
-    url = f"https://graph.facebook.com/v24.0/me/feed"
+def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content: PostContent):
+    url = f"{BASE_FB_URL}/{group_or_page_id}/feed"
    
     attached_media = []
     for attachment in post_content.attachments:
@@ -95,7 +97,7 @@ def post_to_facebook_page(access_token: str, post_content: PostContent):
     payload = {
         'message': post_content.message,
         'attached_media': json.dumps(attached_media),
-        'access_token': config.get('META_ACCESS_TOKEN')
+        'access_token': access_token
     }
 
     r = requests.post(url, data=payload)
@@ -106,25 +108,9 @@ def post_to_facebook_page(access_token: str, post_content: PostContent):
     else:
         print(f"❌ FB Page Error: {r.text}")
 
-def post_to_facebook_group(post_content: PostContent):
-    # NOTE: You must add your "App" to the Group's settings manually on Facebook
-    url = f"https://graph.facebook.com/v19.0/{config.get('FB_GROUP_ID')}/photos"
-    payload = {
-        'message': post_content.message,
-        'access_token': config.get('META_ACCESS_TOKEN')
-    }
-    files = {
-        'source': open(IMAGE_PATH, 'rb')
-    }
-    r = requests.post(url, data=payload, files=files)
-    if r.status_code == 200:
-        print(f"✅ Posted to FB Group: {r.json().get('id')}")
-    else:
-        print(f"❌ FB Group Error: {r.text}")
-
 def post_to_instagram(post_content: PostContent):
     # Step 1: Create Container
-    url_create = f"https://graph.facebook.com/v19.0/{config.get('IG_USER_ID')}/media"
+    url_create = f"https://graph.facebook.com/v24.0/{config.get('IG_USER_ID')}/media"
     # Note: Instagram Graph API requires the image be on a PUBLIC URL, not local.
     # For this script, we assume you host it somewhere or use a service like Imgur temporarily.
     # If you must upload local, you need a specialized tool. 
@@ -252,7 +238,7 @@ def check_date_and_run():
     content = None
 
     # Check if today is in December
-    if today.month == 12 or True:
+    if today.month == 12 or True: # Debugging
         print("--- Content ---")
         content = december_post(today)
         
@@ -268,16 +254,39 @@ def check_date_and_run():
     
     print("--- Setup ---")
     
+    deafember_page_id = config.get('FB_DEAFEMBER_PAGE_ID')
+    if not deafember_page_id:
+        print("❌ Deafember Page ID not set in config.")
+        return
+    
+    signs_of_fun_page_id = config.get('FB_SOF_PAGE_ID')
+    if not signs_of_fun_page_id:
+        print("❌ Sign of Fun Page ID not set in config.")
+        return
+    
+    # signs_of_fun_group_id = config.get('FB_SOF_GROUP_ID')
+    # if not signs_of_fun_group_id:
+    #     print("❌ Sign of Fun Group ID not set in config.")
+    #     return
+    
     token_data = get_facebook_access_tokens()
-    deafember_page_token = get_page_token(token_data, config.get('FB_DEAFEMBER_PAGE_ID'))
+
+    deafember_page_token = get_page_token(token_data, deafember_page_id)
     if not deafember_page_token:
         print("❌ Could not find Deafember Page token.")
         return
-
+    print("✅ Deafember Page token found:", deafember_page_token)
+    
+    signs_of_fun_page_token = get_page_token(token_data, signs_of_fun_page_id)
+    if not signs_of_fun_page_token:
+        print("❌ Could not find Sign of Fun Page token.")
+        return
+    print("✅ Signs of Fun Page token found:", signs_of_fun_page_token)
 
     print("--- Starting Social Media Blast ---")
-    post_to_facebook_page(deafember_page_token, content)
-    # post_to_facebook_group()
+    post_to_facebook_page(deafember_page_token, deafember_page_id, content) # Deafember Page
+    post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Sign of Fun Page
+    # post_to_facebook_page(deafember_page_token, signs_of_fun_group_id, content) # Sign of Fun Group (Uses Deafember Page Token)
     # post_to_twitter()
     # post_to_tiktok()
     # post_to_instagram() # Requires hosting logic
