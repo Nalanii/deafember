@@ -171,15 +171,48 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
         data = r.json()
         
         if 'id' in data:
-            item_container_ids.append(data['id'])
-            print(f"   ↳ Created item container: {data['id']}")
+            # Verify Media Processing Status
+            MAX_RETRIES = 10
+            DELAY = 5 # seconds
+            media_url = f"{BASE_FB_URL}/{data['id']}"
+            media_payload = {
+                'fields': 'status_code',
+                'access_token': access_token
+            }
+            success = False
+
+            for attempt in range(MAX_RETRIES):
+                media_response = requests.get(media_url, params=media_payload)
+                media_data = media_response.json()
+                
+                status = media_data.get('status_code')
+                
+                if status == 'FINISHED':
+                    print(f"   ↳ Created item container: {data['id']}")
+                    item_container_ids.append(data['id'])
+                    success = True
+                    break
+                elif status == 'ERROR':
+                    print("Media processing failed.")
+                    break
+                elif status == 'IN_PROGRESS':
+                    print(f"Processing... (Attempt {attempt + 1}/{MAX_RETRIES})")
+                    time.sleep(DELAY)
+                else:
+                    print(f"Unknown status: {status}")
+                    time.sleep(DELAY)
+            
+            if not success:
+                print("Timed out waiting for media processing.")
+                return
+
         else:
             print(f"❌ Error creating item for {id}: {data}")
-            return None
+            return
 
     if not item_container_ids:
         print("❌ No items were successfully created.")
-        return None
+        return
 
     # --- PHASE 2: Create the Carousel (Parent) Container ---
     
@@ -196,7 +229,7 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
     
     if 'id' not in carousel_result:
         print(f"❌ Error creating parent carousel: {carousel_result}")
-        return None
+        return
         
     creation_id = carousel_result['id']
     print(f"📦 Carousel Parent Created: {creation_id}")
@@ -382,8 +415,6 @@ def check_date_and_run():
     # Facebook
     post_to_facebook_page(deafember_page_token, deafember_page_id, content) # Deafember Page
     signs_of_fun_facebook_post_id = post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Signs of Fun Page
-
-    time.sleep(30) # Wait for Facebook to process the post
 
     # Instagram
     image_urls = get_image_urls_from_facebook_post(signs_of_fun_page_token, signs_of_fun_facebook_post_id)
