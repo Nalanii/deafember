@@ -24,6 +24,20 @@ BASE_FB_URL = "https://graph.facebook.com/v24.0"
 # ==============================================================================
 # HELPER FUNCTIONS
 # ==============================================================================
+def send_discord_message(content):
+    webhook_url = config.get('DISCORD_WEBHOOK_URL')
+    if not webhook_url:
+        print("❌ Discord Webhook URL not set in config.")
+        return
+    payload = {
+        "content": content
+    }
+    response = requests.post(webhook_url, json=payload)
+    if response.status_code == 204:
+        print("✅ Discord message sent successfully.")
+    else:
+        print(f"❌ Failed to send Discord message: {response.status_code} - {response.text}")   
+
 def upload_unpublished_photo_on_facebook(access_token, image_source):
     url = f"{BASE_FB_URL}/me/photos"
     
@@ -125,14 +139,17 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
     payload = {
         'message': post_content.message,
         'attached_media': json.dumps(attached_media),
-        'access_token': access_token
+        'access_token': access_token,
+        'fields': ['permalink_url']
     }
 
     r = requests.post(url, data=payload)
     data = r.json()
 
     if r.status_code == 200:
-        print(f"✅ Posted to FB Page: {data.get('id')}")
+        post_url = data.get('permalink_url')
+        print(f"✅ Posted to FB Page: {post_url}")
+        send_discord_message(f"✅ New Facebook Post Created: {post_url}")
     else:
         print(f"❌ FB Page Error: {r.text}")
     
@@ -196,11 +213,19 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
     publish_result = r_publish.json()
 
     if 'id' in publish_result:
-        print(f"✅ Carousel Published Successfully: {publish_result['id']}")
-        return publish_result['id']
+        media_id = publish_result['id']
+        url_url = f"{BASE_FB_URL}/{media_id}"
+        url_payload = {
+            'fields': 'permalink',
+            'access_token': access_token
+        }
+        r_url = requests.get(url_url, params=url_payload)
+        url_data = r_url.json()
+        post_url = url_data.get('permalink')
+        print(f"✅ Carousel Published Successfully: {post_url}")
+        send_discord_message(f"✅ New Instagram Post Created: {post_url}")
     else:
         print(f"❌ Error Publishing Carousel: {publish_result}")
-        return None
 
 def post_to_twitter(post_content: PostContent):
     client = tweepy.Client(
@@ -226,7 +251,10 @@ def post_to_twitter(post_content: PostContent):
             media_ids.append(res.media_id)
         # Create Tweet
         response = client.create_tweet(text=post_content.message, media_ids=media_ids)
-        print(f"✅ Posted to Twitter: {response.data['id']}")
+        post_url = f"https://x.com/user/status/{response.data['id']}"
+        print(f"✅ Posted to Twitter: {post_url}")
+        send_discord_message(f"✅ New Twitter Post Created: {post_url}")
+
     except Exception as e:
         print(f"❌ Twitter Error: {e}")
 
@@ -354,6 +382,8 @@ def check_date_and_run():
     # Facebook
     post_to_facebook_page(deafember_page_token, deafember_page_id, content) # Deafember Page
     signs_of_fun_facebook_post_id = post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Signs of Fun Page
+
+    time.sleep(30) # Wait for Facebook to process the post
 
     # Instagram
     image_urls = get_image_urls_from_facebook_post(signs_of_fun_page_token, signs_of_fun_facebook_post_id)
