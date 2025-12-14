@@ -27,18 +27,22 @@ BASE_FB_URL = "https://graph.facebook.com/v24.0"
 def send_discord_message(content):
     webhook_url = config.get('DISCORD_WEBHOOK_URL')
     if not webhook_url:
-        print("❌ Discord Webhook URL not set in config.")
+        print("⚠️ Discord Webhook URL not set in config.")
         return
+    
+    print("Sending Discord message...", end="")
+
     payload = {
         "content": content
     }
     response = requests.post(webhook_url, json=payload)
     if response.status_code == 204:
-        print("✅ Discord message sent successfully.")
+        print("✅ Success.")
     else:
-        print(f"❌ Failed to send Discord message: {response.status_code} - {response.text}")   
+        print(f"❌ Failed: {response.status_code} - {response.text}")   
 
 def upload_unpublished_photo_on_facebook(access_token, image_source):
+    print('\t↳ Uploading Unpublished Photo to Facebook...', end="")
     url = f"{BASE_FB_URL}/me/photos"
     
     payload = {
@@ -47,26 +51,24 @@ def upload_unpublished_photo_on_facebook(access_token, image_source):
     }
        
     if not os.path.exists(image_source):
-        print(f"❌ Error: File not found at {image_source}")
+        print(f'❌ Failed: File not found at {image_source}')
         return None
     # Open file in binary mode
     files = {'source': open(image_source, 'rb')}
-    source_desc = f"File: {image_source}"
 
     try:
-        print(f"   ⬆️  Uploading {source_desc}...")
         # Note: 'files' is handled automatically by requests as multipart/form-data
         response = requests.post(url, data=payload, files=files)
         data = response.json()
         
         if 'id' in data:
-            print(f"   ✅ Uploaded photo ID: {data['id']}")
+            print(f"✅ Success. Photo ID: {data['id']}")
             return data['id']
         else:
-            print(f"   ❌ Failed to upload photo: {data}")
+            print(f'❌ Failed: {data}')
             return None
     except Exception as e:
-        print(f"   ❌ Exception uploading photo: {e}")
+        print(f'❌ Failed: {e}')
         return None
     finally:
         # Close file if it was opened
@@ -74,6 +76,7 @@ def upload_unpublished_photo_on_facebook(access_token, image_source):
             files['source'].close()
 
 def get_facebook_access_tokens():
+    print('Fetching Facebook Access Tokens...', end="")
     url = f"{BASE_FB_URL}/me/accounts"
     payload = {
         'access_token': config.get('META_USER_ACCESS_TOKEN')
@@ -81,10 +84,10 @@ def get_facebook_access_tokens():
     r = requests.get(url, params=payload)
     data = r.json()
     if r.status_code == 200:
-        print(f"✅ Fetched FB Access Tokens")
+        print("✅ Success")
         return data
     else:
-        print(f"❌ FB Access Tokens Error: {r.text}")
+        print(f'❌ Failed: {r.text}')
         return []
     
 def get_page_token(data, target_id):
@@ -94,6 +97,7 @@ def get_page_token(data, target_id):
     return None # Return None if the ID isn't found
 
 def get_image_urls_from_facebook_post(access_token, post_id):
+    print('Extracting Image URLs from Facebook Post...', end="")
     url = f"{BASE_FB_URL}/{post_id}"
     params = {
         'fields': 'attachments{subattachments.limit(10){media{image{src}}}}',
@@ -116,8 +120,10 @@ def get_image_urls_from_facebook_post(access_token, post_id):
                     image_urls.append(src)
                     
     except Exception as e:
-        print(f"⚠️ Could not extract URLs: {e}")
-        
+        print(f"❌ Failed. Could not extract URLs: {e}")
+    
+    print('✅ Success. Found', len(image_urls), 'image URLs.')
+
     return image_urls
 
 # ==============================================================================
@@ -125,6 +131,7 @@ def get_image_urls_from_facebook_post(access_token, post_id):
 # ==============================================================================
 
 def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content: PostContent):
+    print(f'Posting to Facebook Page ({group_or_page_id}):')
     url = f"{BASE_FB_URL}/{group_or_page_id}/feed"
    
     attached_media = []
@@ -142,24 +149,27 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
         'access_token': access_token,
         'fields': ['permalink_url']
     }
+    print('\t↳ Publishing to Facebook...', end="")
 
     r = requests.post(url, data=payload)
     data = r.json()
 
     if r.status_code == 200:
         post_url = data.get('permalink_url')
-        print(f"✅ Posted to FB Page: {post_url}")
-        send_discord_message(f"✅ New Facebook Post Created: {post_url}")
+        print(f"✅ Success. URL: {post_url}")
+        send_discord_message(f"New Facebook Post Created: {post_url}")
     else:
-        print(f"❌ FB Page Error: {r.text}")
+        print(f"❌ Failed: {r.text}")
     
     return data.get('id') # Post ID
 
 def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list, caption: str):
+    print('Posting to Instagram:')
     # --- PHASE 1: Create Individual Item Containers ---
     item_container_ids = []
     
     for url in image_urls:
+        print(f"\t↳ Creating item for image URL...", end="")
         url_create = f"{BASE_FB_URL}/{ig_user_id}/media"
         payload = {
             'image_url': url,
@@ -188,26 +198,26 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
                 status = media_data.get('status_code')
                 
                 if status == 'FINISHED':
-                    print(f"   ↳ Created item container: {data['id']}")
+                    print(f"✅ Success. Item container ID: {data['id']}")
                     item_container_ids.append(data['id'])
                     success = True
                     break
                 elif status == 'ERROR':
-                    print("Media processing failed.")
+                    print("❌ Failed: Media processing failed.")
                     break
                 elif status == 'IN_PROGRESS':
-                    print(f"Processing... (Attempt {attempt + 1}/{MAX_RETRIES})")
+                    print(f"Processing (Attempt {attempt + 1}/{MAX_RETRIES})...", end="")
                     time.sleep(DELAY)
                 else:
-                    print(f"Unknown status: {status}")
+                    print(f"Unknown status: '{status}'. Retrying...", end="")
                     time.sleep(DELAY)
             
             if not success:
-                print("Timed out waiting for media processing.")
+                print("❌ Failed: Timed out waiting for media processing.")
                 return
 
         else:
-            print(f"❌ Error creating item for {id}: {data}")
+            print(f"❌ Failed: {data}")
             return
 
     if not item_container_ids:
@@ -215,6 +225,7 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
         return
 
     # --- PHASE 2: Create the Carousel (Parent) Container ---
+    print("\t↳ Creating Parent Container...", end="")
     
     url_carousel = f"{BASE_FB_URL}/{ig_user_id}/media"
     payload = {
@@ -228,13 +239,14 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
     carousel_result = r.json()
     
     if 'id' not in carousel_result:
-        print(f"❌ Error creating parent carousel: {carousel_result}")
+        print(f"❌ Failed: {carousel_result}")
         return
         
     creation_id = carousel_result['id']
-    print(f"📦 Carousel Parent Created: {creation_id}")
+    print(f"✅ Success. ID: {creation_id}")
 
     # --- PHASE 3: Publish the Carousel ---
+    print("\t↳ Publishing to Instagram...", end="")
     
     url_publish = f"{BASE_FB_URL}/{ig_user_id}/media_publish"
     publish_payload = {
@@ -255,12 +267,13 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
         r_url = requests.get(url_url, params=url_payload)
         url_data = r_url.json()
         post_url = url_data.get('permalink')
-        print(f"✅ Carousel Published Successfully: {post_url}")
+        print(f"✅ Success. URL: {post_url}")
         send_discord_message(f"✅ New Instagram Post Created: {post_url}")
     else:
-        print(f"❌ Error Publishing Carousel: {publish_result}")
+        print(f"❌ Failed: {publish_result}")
 
 def post_to_twitter(post_content: PostContent):
+    print("Posting to Twitter...", end="")
     client = tweepy.Client(
         consumer_key=config.get('TWITTER_API_KEY'),
         consumer_secret=config.get('TWITTER_API_SECRET'),
@@ -285,11 +298,11 @@ def post_to_twitter(post_content: PostContent):
         # Create Tweet
         response = client.create_tweet(text=post_content.message, media_ids=media_ids)
         post_url = f"https://x.com/user/status/{response.data['id']}"
-        print(f"✅ Posted to Twitter: {post_url}")
+        print(f"✅ Success. URL: {post_url}")
         send_discord_message(f"✅ New Twitter Post Created: {post_url}")
 
     except Exception as e:
-        print(f"❌ Twitter Error: {e}")
+        print(f"❌ Failed: {e}")
 
 # ==============================================================================
 # CONTENT FUNCTIONS
@@ -385,49 +398,50 @@ def check_date_and_run():
         print("No scheduled posts for today.")
         return
     
-    print("--- Setup ---")
+    print("\n--- Setup ---")
     
     deafember_page_id = config.get('FB_DEAFEMBER_PAGE_ID')
     if not deafember_page_id:
-        print("❌ Deafember Page ID not set in config.")
+        print("⚠️ Deafember Page ID not set in config.")
         return
     
     signs_of_fun_page_id = config.get('FB_SOF_PAGE_ID')
     if not signs_of_fun_page_id:
-        print("❌ Signs of Fun Page ID not set in config.")
+        print("⚠️ Signs of Fun Page ID not set in config.")
         return
     
     token_data = get_facebook_access_tokens()
 
     deafember_page_token = get_page_token(token_data, deafember_page_id)
     if not deafember_page_token:
-        print("❌ Could not find Deafember Page token.")
+        print("⚠️ Could not find Deafember Page token.")
         return
-    print("✅ Deafember Page token found:", deafember_page_token)
     
     signs_of_fun_page_token = get_page_token(token_data, signs_of_fun_page_id)
     if not signs_of_fun_page_token:
-        print("❌ Could not find Signs of Fun Page token.")
+        print("⚠️ Could not find Signs of Fun Page token.")
         return
-    print("✅ Signs of Fun Page token found:", signs_of_fun_page_token)
 
-    print("--- Starting Social Media Blast ---")
+    print("\n--- Starting Social Media Blast ---")
     # Facebook
     post_to_facebook_page(deafember_page_token, deafember_page_id, content) # Deafember Page
+    print()
     signs_of_fun_facebook_post_id = post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Signs of Fun Page
+    print()
 
     # Instagram
     image_urls = get_image_urls_from_facebook_post(signs_of_fun_page_token, signs_of_fun_facebook_post_id)
     post_instagram_carousel(signs_of_fun_page_token, config.get('IG_USER_ID'), image_urls, content.message) # Signs of Fun Instagram
-    
+    print()
+
     # Twitter
     post_to_twitter(content)
 
 if __name__ == "__main__":
-    # check_date_and_run()
+    check_date_and_run()
 
     # Schedule the job every day at 12:00 (noon)
-    print("Scheduling daily check at 12:00 PM...")
+    print("\nScheduling daily check at 12:00 PM...")
     schedule.every().day.at("12:00").do(check_date_and_run)
     
     # Infinite loop to keep the script running and check for pending jobs
