@@ -438,7 +438,7 @@ def check_date_and_run():
     post_to_twitter(content)
 
 if __name__ == "__main__":
-    check_date_and_run()
+    # check_date_and_run()
 
     # Schedule the job every day at 12:00 (noon)
     print("\nScheduling daily check at 12:00 PM...")
