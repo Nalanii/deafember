@@ -24,6 +24,15 @@ BASE_FB_URL = "https://graph.facebook.com/v24.0"
 # ==============================================================================
 # HELPER FUNCTIONS
 # ==============================================================================
+def log_result(ok: bool, ok_msg: str, fail_msg: str):
+    print(ok_msg if ok else fail_msg)
+
+def require(value, message):
+    if not value:
+        print(f"⚠️ {message}")
+        return None
+    return value
+
 def send_discord_message(content):
     webhook_url = config.get('DISCORD_WEBHOOK_URL')
     if not webhook_url:
@@ -36,10 +45,8 @@ def send_discord_message(content):
         "content": content
     }
     response = requests.post(webhook_url, json=payload)
-    if response.status_code == 204:
-        print("✅ Success.")
-    else:
-        print(f"❌ Failed: {response.status_code} - {response.text}")   
+    ok = response.status_code == 204
+    log_result(ok, "✅ Success.", f"❌ Failed: {response.status_code} - {response.text}")
 
 def upload_unpublished_photo_on_facebook(access_token, image_source):
     print('\t↳ Uploading Unpublished Photo to Facebook...', end="")
@@ -62,10 +69,10 @@ def upload_unpublished_photo_on_facebook(access_token, image_source):
         data = response.json()
         
         if 'id' in data:
-            print(f"✅ Success. Photo ID: {data['id']}")
+            log_result(True, f"✅ Success. Photo ID: {data['id']}", "")
             return data['id']
         else:
-            print(f'❌ Failed: {data}')
+            log_result(False, "", f'❌ Failed: {data}')
             return None
     except Exception as e:
         print(f'❌ Failed: {e}')
@@ -83,12 +90,9 @@ def get_facebook_access_tokens():
     }
     r = requests.get(url, params=payload)
     data = r.json()
-    if r.status_code == 200:
-        print("✅ Success")
-        return data
-    else:
-        print(f'❌ Failed: {r.text}')
-        return []
+    ok = r.status_code == 200
+    log_result(ok, "✅ Success", f'❌ Failed: {r.text}')
+    return data if ok else []
     
 def get_page_token(data, target_id):
     for page in data.get('data', []):
@@ -156,10 +160,10 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
 
     if r.status_code == 200:
         post_url = data.get('permalink_url')
-        print(f"✅ Success. URL: {post_url}")
+        log_result(True, f"✅ Success. URL: {post_url}", "")
         send_discord_message(f"New Facebook Post Created: {post_url}")
     else:
-        print(f"❌ Failed: {r.text}")
+        log_result(False, "", f"❌ Failed: {r.text}")
     
     return data.get('id') # Post ID
 
@@ -198,12 +202,12 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
                 status = media_data.get('status_code')
                 
                 if status == 'FINISHED':
-                    print(f"✅ Success. Item container ID: {data['id']}")
+                    log_result(True, f"✅ Success. Item container ID: {data['id']}", "")
                     item_container_ids.append(data['id'])
                     success = True
                     break
                 elif status == 'ERROR':
-                    print("❌ Failed: Media processing failed.")
+                    log_result(False, "", "❌ Failed: Media processing failed.")
                     break
                 elif status == 'IN_PROGRESS':
                     print(f"Processing (Attempt {attempt + 1}/{MAX_RETRIES})...", end="")
@@ -239,11 +243,11 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
     carousel_result = r.json()
     
     if 'id' not in carousel_result:
-        print(f"❌ Failed: {carousel_result}")
+        log_result(False, "", f"❌ Failed: {carousel_result}")
         return
-        
+
     creation_id = carousel_result['id']
-    print(f"✅ Success. ID: {creation_id}")
+    log_result(True, f"✅ Success. ID: {creation_id}", "")
 
     # --- PHASE 3: Publish the Carousel ---
     print("\t↳ Publishing to Instagram...", end="")
@@ -267,10 +271,10 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
         r_url = requests.get(url_url, params=url_payload)
         url_data = r_url.json()
         post_url = url_data.get('permalink')
-        print(f"✅ Success. URL: {post_url}")
+        log_result(True, f"✅ Success. URL: {post_url}", "")
         send_discord_message(f"✅ New Instagram Post Created: {post_url}")
     else:
-        print(f"❌ Failed: {publish_result}")
+        log_result(False, "", f"❌ Failed: {publish_result}")
 
 def post_to_twitter(post_content: PostContent):
     print("Posting to Twitter...", end="")
@@ -298,11 +302,11 @@ def post_to_twitter(post_content: PostContent):
         # Create Tweet
         response = client.create_tweet(text=post_content.message, media_ids=media_ids)
         post_url = f"https://x.com/user/status/{response.data['id']}"
-        print(f"✅ Success. URL: {post_url}")
+        log_result(True, f"✅ Success. URL: {post_url}", "")
         send_discord_message(f"✅ New Twitter Post Created: {post_url}")
 
     except Exception as e:
-        print(f"❌ Failed: {e}")
+        log_result(False, "", f"❌ Failed: {e}")
 
 # ==============================================================================
 # CONTENT FUNCTIONS
@@ -400,26 +404,22 @@ def check_date_and_run():
     
     print("\n--- Setup ---")
     
-    deafember_page_id = config.get('FB_DEAFEMBER_PAGE_ID')
+    deafember_page_id = require(config.get('FB_DEAFEMBER_PAGE_ID'), "Deafember Page ID not set in config.")
     if not deafember_page_id:
-        print("⚠️ Deafember Page ID not set in config.")
         return
-    
-    signs_of_fun_page_id = config.get('FB_SOF_PAGE_ID')
+
+    signs_of_fun_page_id = require(config.get('FB_SOF_PAGE_ID'), "Signs of Fun Page ID not set in config.")
     if not signs_of_fun_page_id:
-        print("⚠️ Signs of Fun Page ID not set in config.")
         return
-    
+
     token_data = get_facebook_access_tokens()
 
-    deafember_page_token = get_page_token(token_data, deafember_page_id)
+    deafember_page_token = require(get_page_token(token_data, deafember_page_id), "Could not find Deafember Page token.")
     if not deafember_page_token:
-        print("⚠️ Could not find Deafember Page token.")
         return
-    
-    signs_of_fun_page_token = get_page_token(token_data, signs_of_fun_page_id)
+
+    signs_of_fun_page_token = require(get_page_token(token_data, signs_of_fun_page_id), "Could not find Signs of Fun Page token.")
     if not signs_of_fun_page_token:
-        print("⚠️ Could not find Signs of Fun Page token.")
         return
 
     print("\n--- Starting Social Media Blast ---")
