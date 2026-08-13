@@ -5,7 +5,20 @@ In the repo's root directory, run the following command:
 # Setup Needed Keys
 Using the .env-example file as a guide, create an .env file and fill in the values as follows:
 ## Facebook & Instagram (Meta)
-1. **TODO**
+1. Go to [Meta for Developers](https://developers.facebook.com/apps) and create a new app tied to your Facebook account (any use case that gives you Graph API access works — e.g. "Other" / "Business").
+2. Make sure you're an **admin** of the two Facebook Pages you want to post to ("Deaf-ember" and "Signs of Fun"), and that the Instagram account you want to post to is a **Professional (Business/Creator) account** linked to the "Signs of Fun" Page specifically (Instagram app → Settings → Account Center → Linked accounts → Facebook, or from the Page's own Settings → Linked Accounts) — that's the Page this script pulls the Instagram images and posts from.
+3. Open the [Graph API Explorer](https://developers.facebook.com/tools/explorer/), select your app, click **Get Access Token**, and grant these permissions: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `instagram_content_publish`. As long as you're an admin/developer/tester on the app, you can generate and use this token yourself without submitting for Meta App Review.
+4. This gives you a short-lived User Access Token (good for ~1-2 hours). Exchange it for a long-lived one (~60 days) by calling, from a terminal — never client-side code, since it exposes your App Secret:
+   ```
+   GET https://graph.facebook.com/v24.0/oauth/access_token
+     ?grant_type=fb_exchange_token
+     &client_id=<YOUR_APP_ID>
+     &client_secret=<YOUR_APP_SECRET>
+     &fb_exchange_token=<YOUR_SHORT_LIVED_TOKEN>
+   ```
+   Put the returned token in `META_USER_ACCESS_TOKEN`. It isn't non-expiring — plan to regenerate it roughly every 60 days.
+5. Find your two Facebook Page IDs (visible on each Page's About/Page Transparency section, or via `GET /me/accounts` in the Graph API Explorer with your token) and put them in `FB_DEAFEMBER_PAGE_ID` / `FB_SOF_PAGE_ID`.
+6. Find your Instagram Business Account ID by querying `GET /<SIGNS_OF_FUN_PAGE_ID>?fields=instagram_business_account` in the Graph API Explorer — the returned `id` goes in `IG_USER_ID`.
 
 ## Twitter/X
 1. Go to the Twitter Developer Portal
