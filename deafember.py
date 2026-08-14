@@ -68,12 +68,9 @@ def upload_unpublished_photo_on_facebook(access_token, image_source):
         response = requests.post(url, data=payload, files=files)
         data = response.json()
         
-        if 'id' in data:
-            log_result(True, f"✅ Success. Photo ID: {data['id']}", "")
-            return data['id']
-        else:
-            log_result(False, "", f'❌ Failed: {data}')
-            return None
+        ok = 'id' in data
+        log_result(ok, f"✅ Success. Photo ID: {data.get('id')}", f'❌ Failed: {data}')
+        return data.get('id') if ok else None
     except Exception as e:
         print(f'❌ Failed: {e}')
         return None
@@ -158,12 +155,11 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
     r = requests.post(url, data=payload)
     data = r.json()
 
-    if r.status_code == 200:
-        post_url = data.get('permalink_url')
-        log_result(True, f"✅ Success. URL: {post_url}", "")
+    ok = r.status_code == 200
+    post_url = data.get('permalink_url')
+    log_result(ok, f"✅ Success. URL: {post_url}", f"❌ Failed: {r.text}")
+    if ok:
         send_discord_message(f"New Facebook Post Created: {post_url}")
-    else:
-        log_result(False, "", f"❌ Failed: {r.text}")
     
     return data.get('id') # Post ID
 
@@ -202,12 +198,12 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
                 status = media_data.get('status_code')
                 
                 if status == 'FINISHED':
-                    log_result(True, f"✅ Success. Item container ID: {data['id']}", "")
+                    print(f"✅ Success. Item container ID: {data['id']}")
                     item_container_ids.append(data['id'])
                     success = True
                     break
                 elif status == 'ERROR':
-                    log_result(False, "", "❌ Failed: Media processing failed.")
+                    print("❌ Failed: Media processing failed.")
                     break
                 elif status == 'IN_PROGRESS':
                     print(f"Processing (Attempt {attempt + 1}/{MAX_RETRIES})...", end="")
@@ -242,12 +238,12 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
     r = requests.post(url_carousel, data=payload)
     carousel_result = r.json()
     
-    if 'id' not in carousel_result:
-        log_result(False, "", f"❌ Failed: {carousel_result}")
+    ok = 'id' in carousel_result
+    log_result(ok, f"✅ Success. ID: {carousel_result.get('id')}", f"❌ Failed: {carousel_result}")
+    if not ok:
         return
 
     creation_id = carousel_result['id']
-    log_result(True, f"✅ Success. ID: {creation_id}", "")
 
     # --- PHASE 3: Publish the Carousel ---
     print("\t↳ Publishing to Instagram...", end="")
@@ -271,10 +267,10 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
         r_url = requests.get(url_url, params=url_payload)
         url_data = r_url.json()
         post_url = url_data.get('permalink')
-        log_result(True, f"✅ Success. URL: {post_url}", "")
+        print(f"✅ Success. URL: {post_url}")
         send_discord_message(f"✅ New Instagram Post Created: {post_url}")
     else:
-        log_result(False, "", f"❌ Failed: {publish_result}")
+        print(f"❌ Failed: {publish_result}")
 
 def post_to_twitter(post_content: PostContent):
     print("Posting to Twitter...", end="")
@@ -302,11 +298,11 @@ def post_to_twitter(post_content: PostContent):
         # Create Tweet
         response = client.create_tweet(text=post_content.message, media_ids=media_ids)
         post_url = f"https://x.com/user/status/{response.data['id']}"
-        log_result(True, f"✅ Success. URL: {post_url}", "")
+        print(f"✅ Success. URL: {post_url}")
         send_discord_message(f"✅ New Twitter Post Created: {post_url}")
 
     except Exception as e:
-        log_result(False, "", f"❌ Failed: {e}")
+        print(f"❌ Failed: {e}")
 
 # ==============================================================================
 # CONTENT FUNCTIONS
