@@ -60,24 +60,20 @@ def upload_unpublished_photo_on_facebook(access_token, image_source):
     if not os.path.exists(image_source):
         print(f'❌ Failed: File not found at {image_source}')
         return None
-    # Open file in binary mode
-    files = {'source': open(image_source, 'rb')}
 
     try:
         # Note: 'files' is handled automatically by requests as multipart/form-data
-        response = requests.post(url, data=payload, files=files)
-        data = response.json()
-        
+        with open(image_source, 'rb') as f:
+            files = {'source': f}
+            response = requests.post(url, data=payload, files=files)
+            data = response.json()
+
         ok = 'id' in data
         log_result(ok, f"✅ Success. Photo ID: {data.get('id')}", f'❌ Failed: {data}')
         return data.get('id') if ok else None
     except Exception as e:
         print(f'❌ Failed: {e}')
         return None
-    finally:
-        # Close file if it was opened
-        if files:
-            files['source'].close()
 
 def get_facebook_access_tokens():
     print('Fetching Facebook Access Tokens...', end="")
@@ -136,13 +132,11 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
     url = f"{BASE_FB_URL}/{group_or_page_id}/feed"
    
     attached_media = []
-    photo_ids = []
     for attachment in post_content.attachments:
         photo_id = upload_unpublished_photo_on_facebook(access_token, attachment)
         if photo_id:
             # Format required by Graph API: [{"media_fbid": "123"}, ...]
             attached_media.append({"media_fbid": photo_id})
-            photo_ids.append(photo_id)
 
     payload = {
         'message': post_content.message,
@@ -434,8 +428,6 @@ def check_date_and_run():
     post_to_twitter(content)
 
 if __name__ == "__main__":
-    # check_date_and_run()
-
     # Schedule the job every day at 12:00 (noon)
     print("\nScheduling daily check at 12:00 PM...")
     schedule.every().day.at("12:00").do(check_date_and_run)
