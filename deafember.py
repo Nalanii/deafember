@@ -159,9 +159,9 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
 
 def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list, caption: str):
     print('Posting to Instagram:')
-    # --- PHASE 1: Create Individual Item Containers ---
-    item_container_ids = []
-    
+    # --- PHASE 1a: Create Individual Item Containers (all at once) ---
+    pending_container_ids = []
+
     for url in image_urls:
         print(f"\t↳ Creating item for image URL...", end="")
         url_create = f"{BASE_FB_URL}/{ig_user_id}/media"
@@ -170,49 +170,56 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
             'is_carousel_item': 'true',  # CRITICAL: Marks this as a child item
             'access_token': access_token
         }
-        
+
         r = requests.post(url_create, data=payload)
         data = r.json()
-        
+
         if 'id' in data:
-            # Verify Media Processing Status
-            MAX_RETRIES = 10
-            DELAY = 5 # seconds
-            media_url = f"{BASE_FB_URL}/{data['id']}"
-            media_payload = {
-                'fields': 'status_code',
-                'access_token': access_token
-            }
-            success = False
-
-            for attempt in range(MAX_RETRIES):
-                media_response = requests.get(media_url, params=media_payload)
-                media_data = media_response.json()
-                
-                status = media_data.get('status_code')
-                
-                if status == 'FINISHED':
-                    print(f"✅ Success. Item container ID: {data['id']}")
-                    item_container_ids.append(data['id'])
-                    success = True
-                    break
-                elif status == 'ERROR':
-                    print("❌ Failed: Media processing failed.")
-                    break
-                elif status == 'IN_PROGRESS':
-                    print(f"Processing (Attempt {attempt + 1}/{MAX_RETRIES})...", end="")
-                    time.sleep(DELAY)
-                else:
-                    print(f"Unknown status: '{status}'. Retrying...", end="")
-                    time.sleep(DELAY)
-            
-            if not success:
-                print("❌ Failed: Timed out waiting for media processing.")
-                return
-
+            print(f"✅ Container created. ID: {data['id']}")
+            pending_container_ids.append(data['id'])
         else:
             print(f"❌ Failed: {data}")
             return
+
+    # --- PHASE 1b: Poll all pending containers together for FINISHED status ---
+    MAX_RETRIES = 10
+    DELAY = 5  # seconds
+    media_payload = {
+        'fields': 'status_code',
+        'access_token': access_token
+    }
+    item_container_ids = []
+
+    for attempt in range(MAX_RETRIES):
+        still_pending = []
+
+        for container_id in pending_container_ids:
+            media_url = f"{BASE_FB_URL}/{container_id}"
+            media_response = requests.get(media_url, params=media_payload)
+            media_data = media_response.json()
+            status = media_data.get('status_code')
+
+            if status == 'FINISHED':
+                print(f"\t↳ ✅ Container {container_id} finished processing.")
+                item_container_ids.append(container_id)
+            elif status == 'ERROR':
+                print(f"❌ Failed: Media processing failed for container {container_id}.")
+                return
+            else:
+                still_pending.append(container_id)
+
+        pending_container_ids = still_pending
+
+        if not pending_container_ids:
+            break
+
+        print(f"\t↳ Processing (Attempt {attempt + 1}/{MAX_RETRIES}): "
+              f"{len(pending_container_ids)} container(s) still pending...")
+        time.sleep(DELAY)
+
+    if pending_container_ids:
+        print("❌ Failed: Timed out waiting for media processing.")
+        return
 
     if not item_container_ids:
         print("❌ No items were successfully created.")
