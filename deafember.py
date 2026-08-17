@@ -7,6 +7,7 @@ import datetime
 from num2words import num2words
 import schedule
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 # ==============================================================================
 # CONFIGURATION
@@ -160,22 +161,24 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
 def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list, caption: str):
     print('Posting to Instagram:')
     # --- PHASE 1a: Create Individual Item Containers (all at once) ---
-    pending_container_ids = []
-
-    for url in image_urls:
-        print(f"\t↳ Creating item for image URL...", end="")
+    def create_item_container(url):
         url_create = f"{BASE_FB_URL}/{ig_user_id}/media"
         payload = {
             'image_url': url,
             'is_carousel_item': 'true',  # CRITICAL: Marks this as a child item
             'access_token': access_token
         }
-
         r = requests.post(url_create, data=payload)
-        data = r.json()
+        return r.json()
 
+    print(f"\t↳ Creating {len(image_urls)} item container(s) concurrently...")
+    with ThreadPoolExecutor(max_workers=max(len(image_urls), 1)) as executor:
+        results = list(executor.map(create_item_container, image_urls))
+
+    pending_container_ids = []
+    for data in results:
         if 'id' in data:
-            print(f"✅ Container created. ID: {data['id']}")
+            print(f"\t↳ ✅ Container created. ID: {data['id']}")
             pending_container_ids.append(data['id'])
         else:
             print(f"❌ Failed: {data}")
@@ -454,24 +457,33 @@ def check_date_and_run():
         page["token"] = page_token
 
     print("\n--- Starting Social Media Blast ---")
-    # Facebook
-    instagram_source_page = None
-    instagram_source_post_id = None
-    for page in resolved_pages:
-        post_id = post_to_facebook_page(page["token"], page["id"], content) # e.g. Deafember Page
-        print()
-        if page["is_instagram_source"]:
-            instagram_source_page = page
-            instagram_source_post_id = post_id
+    # Twitter has no dependency on the Facebook/Instagram results, so it's kicked
+    # off concurrently with that block and only awaited at the very end.
+    with ThreadPoolExecutor(max_workers=len(resolved_pages) + 1) as executor:
+        twitter_future = executor.submit(post_to_twitter, content)
 
-    # Instagram
-    if instagram_source_page:
-        image_urls = get_image_urls_from_facebook_post(instagram_source_page["token"], instagram_source_post_id)
-        post_instagram_carousel(instagram_source_page["token"], config.get('IG_USER_ID'), image_urls, content.message)
-        print()
+        # Facebook: the pages are independent, so post to all of them concurrently.
+        instagram_source_page = None
+        instagram_source_post_id = None
+        fb_futures = {
+            executor.submit(post_to_facebook_page, page["token"], page["id"], content): page
+            for page in resolved_pages
+        }
+        for future, page in fb_futures.items():
+            post_id = future.result()
+            print()
+            if page["is_instagram_source"]:
+                instagram_source_page = page
+                instagram_source_post_id = post_id
 
-    # Twitter
-    post_to_twitter(content)
+        # Instagram
+        if instagram_source_page:
+            image_urls = get_image_urls_from_facebook_post(instagram_source_page["token"], instagram_source_post_id)
+            post_instagram_carousel(instagram_source_page["token"], config.get('IG_USER_ID'), image_urls, content.message)
+            print()
+
+        # Wait for Twitter to finish before returning.
+        twitter_future.result()
 
 if __name__ == "__main__":
     # Schedule the job every day at 12:00 (noon)
