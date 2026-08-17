@@ -153,7 +153,7 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
     post_url = data.get('permalink_url')
     log_result(ok, f"✅ Success. URL: {post_url}", f"❌ Failed: {r.text}")
     if ok:
-        send_discord_message(f"New Facebook Post Created: {post_url}")
+        send_discord_message(f"✅ New Facebook Post Created: {post_url}")
     
     return data.get('id') # Post ID
 
