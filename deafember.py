@@ -28,6 +28,13 @@ BASE_FB_URL = "https://graph.facebook.com/v24.0"
 def log_result(ok: bool, ok_msg: str, fail_msg: str):
     print(ok_msg if ok else fail_msg)
 
+def _finalize_post(ok: bool, post_url, fail_detail, platform_label: str):
+    """Shared 'check success, print result, notify Discord' tail used by
+    the platform-posting functions once they've published their content."""
+    log_result(ok, f"✅ Success. URL: {post_url}", f"❌ Failed: {fail_detail}")
+    if ok:
+        send_discord_message(f"✅ New {platform_label} Post Created: {post_url}")
+
 def require(value, message):
     if not value:
         print(f"⚠️ {message}")
@@ -152,10 +159,8 @@ def post_to_facebook_page(access_token: str, group_or_page_id: str, post_content
 
     ok = r.status_code == 200
     post_url = data.get('permalink_url')
-    log_result(ok, f"✅ Success. URL: {post_url}", f"❌ Failed: {r.text}")
-    if ok:
-        send_discord_message(f"✅ New Facebook Post Created: {post_url}")
-    
+    _finalize_post(ok, post_url, r.text, "Facebook")
+
     return data.get('id') # Post ID
 
 def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list, caption: str):
@@ -261,7 +266,9 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
     r_publish = requests.post(url_publish, data=publish_payload)
     publish_result = r_publish.json()
 
-    if 'id' in publish_result:
+    ok = 'id' in publish_result
+    post_url = None
+    if ok:
         media_id = publish_result['id']
         url_url = f"{BASE_FB_URL}/{media_id}"
         url_payload = {
@@ -271,25 +278,25 @@ def post_instagram_carousel(access_token: str, ig_user_id: str, image_urls: list
         r_url = requests.get(url_url, params=url_payload)
         url_data = r_url.json()
         post_url = url_data.get('permalink')
-        print(f"✅ Success. URL: {post_url}")
-        send_discord_message(f"✅ New Instagram Post Created: {post_url}")
-    else:
-        print(f"❌ Failed: {publish_result}")
+
+    _finalize_post(ok, post_url, publish_result, "Instagram")
 
 def post_to_twitter(post_content: PostContent):
     print("Posting to Twitter...", end="")
+    api_key = config.get('TWITTER_API_KEY')
+    api_secret = config.get('TWITTER_API_SECRET')
+    access_token = config.get('TWITTER_ACCESS_TOKEN')
+    access_secret = config.get('TWITTER_ACCESS_SECRET')
+
     client = tweepy.Client(
-        consumer_key=config.get('TWITTER_API_KEY'),
-        consumer_secret=config.get('TWITTER_API_SECRET'),
-        access_token=config.get('TWITTER_ACCESS_TOKEN'),
-        access_token_secret=config.get('TWITTER_ACCESS_SECRET'),
+        consumer_key=api_key,
+        consumer_secret=api_secret,
+        access_token=access_token,
+        access_token_secret=access_secret,
     )
-    
+
     # Authenticate v1.1 for media upload (v2 doesn't support media upload yet easily)
-    auth = tweepy.OAuth1UserHandler(
-        config.get('TWITTER_API_KEY'), config.get('TWITTER_API_SECRET'),
-        config.get('TWITTER_ACCESS_TOKEN'), config.get('TWITTER_ACCESS_SECRET')
-    )
+    auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_secret)
     api = tweepy.API(auth)
 
     try:
