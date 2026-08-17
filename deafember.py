@@ -350,11 +350,23 @@ def getPrompt(day_of_month):
 def getText(day_of_month, year):
     return f"Deaf-ember {year} Day {num2words(day_of_month)}: The prompt is \"{getPrompt(day_of_month)}\". Get creative and tag us in your art! Don't forget to use the hashtag #deafember{year}"
 
+# Each day of the campaign consumes this many sequentially-numbered photos,
+# 1-indexed starting from day 1 (day 1 -> photos 1-2, day 2 -> photos 3-4, ...).
+PHOTOS_PER_DAY = 2
+
+def photo_path_for(day_of_month, slot):
+    """Return the photo path for the given day of month and slot (1-indexed within the day).
+
+    e.g. photo_path_for(1, 1) -> "./photos/1.png", photo_path_for(1, 2) -> "./photos/2.png"
+    """
+    photo_number = ((day_of_month - 1) * PHOTOS_PER_DAY) + slot
+    return f"./photos/{photo_number}.png"
+
 def december_post(today):
     current_day_of_month = today.day
-    main_photo_path = f"./photos/{(current_day_of_month*2)}.png"
+    main_photo_path = photo_path_for(current_day_of_month, 2)
     print(f"Using main photo path: {main_photo_path}")
-    list_photo_path = f"./photos/{((current_day_of_month*2)-1)}.png"
+    list_photo_path = photo_path_for(current_day_of_month, 1)
     print(f"Using list photo path: {list_photo_path}")
 
     text = getText(current_day_of_month, today.year)
@@ -370,10 +382,46 @@ def january_post(today):
     last_year = today.year - 1
     annual_count = last_year - FIRST_DEAFEMBER_YEAR + 1
 
+    # December has 31 days, so the wrap-up photo is the next one in sequence
+    # after December's last day (day 31, slot 2).
+    wrap_up_photo_path = photo_path_for(31, PHOTOS_PER_DAY + 1)
+
     return PostContent(
         message=f"That's a wrap! Thank you for participating in our {num2words(annual_count, to='ordinal')}-annual Deaf-ember. Happy New Year! #deafember{last_year}",
-        attachments=["./photos/63.png"]
+        attachments=[wrap_up_photo_path]
     )
+
+# ==============================================================================
+# SCHEDULE
+# ==============================================================================
+
+# Each entry is (date_predicate, content_fn). date_predicate receives today's
+# date and returns True if content_fn should run today. The first matching
+# entry wins. Add new recurring date-triggered posts by adding an entry here,
+# not a new elif branch.
+SCHEDULE = [
+    (lambda today: today.month == 12, december_post),
+    (lambda today: today.month == 1 and today.day == 1, january_post),
+]
+
+def content_for_date(today):
+    for date_predicate, content_fn in SCHEDULE:
+        if date_predicate(today):
+            return content_fn(today)
+    return None
+
+# ==============================================================================
+# FACEBOOK PAGES
+# ==============================================================================
+
+# Each Page we post to. `config_key` is the .env key holding the Page ID.
+# `is_instagram_source` marks the (single) Page whose Facebook post is also
+# used as the image source for the Instagram carousel. Add a new Page to
+# post to by adding an entry here, not new guard/fetch/post code below.
+PAGES = [
+    {"name": "Deafember", "config_key": "FB_DEAFEMBER_PAGE_ID", "is_instagram_source": False},
+    {"name": "Signs of Fun", "config_key": "FB_SOF_PAGE_ID", "is_instagram_source": True},
+]
 
 # ==============================================================================
 # MAIN EXECUTION
@@ -382,54 +430,45 @@ def january_post(today):
 def check_date_and_run():
     today = datetime.date.today()
 
-    content = None
-
-    # Check if today is in December
-    if today.month == 12:
-        print("--- Content ---")
-        content = december_post(today)
-        
-    # Check if today is January 1st (Month 1, Day 1)
-    elif today.month == 1 and today.day == 1:
-        print("--- Content ---")
-        content = january_post(today)
-        
-    # Otherwise do nothing
-    else:
+    print("--- Content ---")
+    content = content_for_date(today)
+    if content is None:
         print("No scheduled posts for today.")
         return
-    
-    print("\n--- Setup ---")
-    
-    deafember_page_id = require(config.get('FB_DEAFEMBER_PAGE_ID'), "Deafember Page ID not set in config.")
-    if not deafember_page_id:
-        return
 
-    signs_of_fun_page_id = require(config.get('FB_SOF_PAGE_ID'), "Signs of Fun Page ID not set in config.")
-    if not signs_of_fun_page_id:
-        return
+    print("\n--- Setup ---")
+
+    resolved_pages = []
+    for page in PAGES:
+        page_id = require(config.get(page["config_key"]), f"{page['name']} Page ID not set in config.")
+        if not page_id:
+            return
+        resolved_pages.append({**page, "id": page_id})
 
     token_data = get_facebook_access_tokens()
 
-    deafember_page_token = require(get_page_token(token_data, deafember_page_id), "Could not find Deafember Page token.")
-    if not deafember_page_token:
-        return
-
-    signs_of_fun_page_token = require(get_page_token(token_data, signs_of_fun_page_id), "Could not find Signs of Fun Page token.")
-    if not signs_of_fun_page_token:
-        return
+    for page in resolved_pages:
+        page_token = require(get_page_token(token_data, page["id"]), f"Could not find {page['name']} Page token.")
+        if not page_token:
+            return
+        page["token"] = page_token
 
     print("\n--- Starting Social Media Blast ---")
     # Facebook
-    post_to_facebook_page(deafember_page_token, deafember_page_id, content) # Deafember Page
-    print()
-    signs_of_fun_facebook_post_id = post_to_facebook_page(signs_of_fun_page_token, signs_of_fun_page_id, content) # Signs of Fun Page
-    print()
+    instagram_source_page = None
+    instagram_source_post_id = None
+    for page in resolved_pages:
+        post_id = post_to_facebook_page(page["token"], page["id"], content) # e.g. Deafember Page
+        print()
+        if page["is_instagram_source"]:
+            instagram_source_page = page
+            instagram_source_post_id = post_id
 
     # Instagram
-    image_urls = get_image_urls_from_facebook_post(signs_of_fun_page_token, signs_of_fun_facebook_post_id)
-    post_instagram_carousel(signs_of_fun_page_token, config.get('IG_USER_ID'), image_urls, content.message) # Signs of Fun Instagram
-    print()
+    if instagram_source_page:
+        image_urls = get_image_urls_from_facebook_post(instagram_source_page["token"], instagram_source_post_id)
+        post_instagram_carousel(instagram_source_page["token"], config.get('IG_USER_ID'), image_urls, content.message)
+        print()
 
     # Twitter
     post_to_twitter(content)
