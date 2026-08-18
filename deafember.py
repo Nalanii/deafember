@@ -300,12 +300,13 @@ def post_to_twitter(post_content: PostContent):
     api = tweepy.API(auth)
 
     try:
-        # Upload image
-        media_ids = []
-        for filename in post_content.attachments:
+        # Upload images concurrently (order preserved via executor.map)
+        def upload_media(filename):
             # Uploads to v1.1 endpoint
-            res = api.media_upload(filename)
-            media_ids.append(res.media_id)
+            return api.media_upload(filename)
+
+        with ThreadPoolExecutor(max_workers=max(len(post_content.attachments), 1)) as executor:
+            media_ids = [res.media_id for res in executor.map(upload_media, post_content.attachments)]
         # Create Tweet
         response = client.create_tweet(text=post_content.message, media_ids=media_ids)
         post_url = f"https://x.com/user/status/{response.data['id']}"
