@@ -1,5 +1,5 @@
 num2words==0.5.14
-requests==2.31.0
+requests==2.33.0
 schedule==1.2.2
 tweepy==4.16.0
 dotenv==0.9.9
