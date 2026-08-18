@@ -16,9 +16,9 @@ from concurrent.futures import ThreadPoolExecutor
 config = dotenv_values(".env")
 
 class PostContent:
-    def __init__(self, message, attachments=[]):
+    def __init__(self, message, attachments=None):
         self.message = message
-        self.attachments = attachments
+        self.attachments = attachments or []
 
 BASE_FB_URL = "https://graph.facebook.com/v24.0"
 
